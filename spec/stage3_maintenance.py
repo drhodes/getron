@@ -1,27 +1,37 @@
 '''
-Stage 3: Diagnostics, Maintenance & Repair Specs
+Stage 3: Diagnostics, Targeted Repair & Garbage Collection Specs
 '''
 
 from .err import Feat, Req
 
 
-class DoctorDiagnostics(Feat):
+class DoctorInspectionReq(Req):
     '''
-    `getron doctor` performs a comprehensive system check including binary integrity,
-    manifest validity, service unit status, permissions, and daemon IPC responsiveness.
-    Outputs clear pass/fail status and actionable remediation advice.
-    '''
-
-
-class TargetedRepair(Feat):
-    '''
-    `getron repair` performs targeted fixes (restoring broken symlinks, re-writing service unit files,
-    re-triggering daemon start) without performing full destruct-and-reinstall cycles.
+    `getron doctor` inspects host platform details, Getron CLI environment,
+    active and installed Tetron versions, manifest integrity, active symlink validity,
+    service unit configuration, and daemon IPC health.
+    Emits structured pass/fail indicators and actionable recommendations.
     '''
 
 
-class GarbageCollection(Feat):
+class TargetedRepairReq(Req):
     '''
-    `getron gc` cleans up obsolete, non-active versions while preserving the active version
-    and the most recent rollback target version.
+    `getron repair` performs non-destructive targeted repairs:
+    restoring broken/missing `active` symlinks to the latest valid installed version,
+    re-generating missing manifests, and repairing directory layout structure.
+    '''
+
+
+class GarbageCollectionReq(Req):
+    '''
+    `getron gc` safely removes obsolete installed versions from `<root>/versions/` while
+    guaranteeing that the currently `active` version and the `rollback` target version
+    are never removed.
+    '''
+
+
+class UninstallCommandFeat(Feat):
+    '''
+    `getron uninstall <version>` removes a specific installed version directory.
+    Refuses to uninstall the currently active version unless forced or another version is active.
     '''

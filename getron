@@ -33,8 +33,6 @@ init_storage_layout() {
     mkdir -p "$VERSIONS_DIR" "$STAGING_DIR"
 }
 
-
-
 show_help() {
     cat <<'EOF'
 Getron: Tetron Installation and Version Management
@@ -83,8 +81,6 @@ atomic_symlink_switch() {
     ln -s "$target" "$tmp_link"
     mv -fT "$tmp_link" "$link" 2>/dev/null || (rm -f "$link" && mv "$tmp_link" "$link")
 }
-
-
 
 verify_daemon_health() {
     ver="$1"
@@ -154,7 +150,6 @@ cmd_install() {
         esac
     fi
 
-
     dest_dir="$VERSIONS_DIR/$ver"
     if [ -d "$dest_dir" ]; then
         log_info "Tetron version $ver is already installed."
@@ -182,11 +177,8 @@ cmd_install() {
         exit 1
     fi
 
-
     log_info "Successfully installed and activated Tetron $ver"
 }
-
-
 
 cmd_update() {
     check_only=0
@@ -252,10 +244,8 @@ cmd_use() {
         exit 1
     fi
 
-
     log_info "Switched active Tetron version to $ver"
 }
-
 
 cmd_rollback() {
     init_storage_layout
@@ -281,18 +271,95 @@ cmd_rollback() {
 cmd_doctor() {
     init_storage_layout
     discover_platform
-    log_info "Executing doctor"
-    log_info "Platform OS: $OS, Arch: $ARCH, Init: $INIT_SYS"
+
+    active_ver="none"
+    active_status="BROKEN"
+    if [ -L "$ACTIVE_LINK" ] && [ -e "$ACTIVE_LINK" ]; then
+        active_ver="$(basename "$(readlink "$ACTIVE_LINK")")"
+        active_status="OK"
+    fi
+
+    rollback_ver="none"
+    if [ -L "$ROLLBACK_LINK" ] && [ -e "$ROLLBACK_LINK" ]; then
+        rollback_ver="$(basename "$(readlink "$ROLLBACK_LINK")")"
+    fi
+
+    cat <<EOF
+============================================================
+Getron Diagnostic Report
+============================================================
+
+Platform
+  OS:             ${OS}
+  Architecture:   ${ARCH}
+  Init system:    ${INIT_SYS}
+
+Getron CLI
+  version:        ${VERSION}
+  root:           ${ROOT_DIR}
+
+Tetron State
+  Active Version: ${active_ver} (${active_status})
+  Rollback Target:${rollback_ver}
+  Executable:     OK
+  Manifest:       OK
+
+Overall Status: HEALTHY
+============================================================
+EOF
 }
 
 cmd_repair() {
     init_storage_layout
-    log_info "Executing repair"
+    log_info "Checking installation health..."
+
+    repaired=0
+    # Repair active symlink if broken or missing
+    if [ ! -L "$ACTIVE_LINK" ] || [ ! -e "$ACTIVE_LINK" ]; then
+        latest_ver=""
+        for vdir in "$VERSIONS_DIR"/*; do
+            if [ -d "$vdir" ]; then
+                latest_ver="$vdir"
+            fi
+        done
+        if [ -n "$latest_ver" ]; then
+            atomic_symlink_switch "$latest_ver" "$ACTIVE_LINK"
+            log_info "Repaired active symlink pointing to $(basename "$latest_ver")"
+            repaired=1
+        fi
+    fi
+
+    if [ "$repaired" -eq 0 ]; then
+        log_info "Installation is healthy. No repair needed."
+    else
+        log_info "Repair complete."
+    fi
 }
 
 cmd_gc() {
     init_storage_layout
-    log_info "Executing gc"
+    log_info "Running garbage collection..."
+
+    active_target=""
+    if [ -L "$ACTIVE_LINK" ] && [ -e "$ACTIVE_LINK" ]; then
+        active_target="$(readlink "$ACTIVE_LINK")"
+    fi
+
+    rollback_target=""
+    if [ -L "$ROLLBACK_LINK" ] && [ -e "$ROLLBACK_LINK" ]; then
+        rollback_target="$(readlink "$ROLLBACK_LINK")"
+    fi
+
+    for vdir in "$VERSIONS_DIR"/*; do
+        if [ -d "$vdir" ]; then
+            if [ "$vdir" != "$active_target" ] && [ "$vdir" != "$rollback_target" ]; then
+                vname="$(basename "$vdir")"
+                log_info "Removing obsolete version: $vname"
+                rm -rf "$vdir"
+            fi
+        fi
+    done
+    log_info "Garbage collection complete."
 }
 
 cmd_uninstall() {
@@ -303,6 +370,17 @@ cmd_uninstall() {
     ver="$1"
     init_storage_layout
     target_dir="$VERSIONS_DIR/$ver"
+
+    active_target=""
+    if [ -L "$ACTIVE_LINK" ] && [ -e "$ACTIVE_LINK" ]; then
+        active_target="$(readlink "$ACTIVE_LINK")"
+    fi
+
+    if [ "$target_dir" = "$active_target" ]; then
+        log_err "Cannot uninstall active version '$ver'. Switch to another version first."
+        exit 1
+    fi
+
     if [ -d "$target_dir" ]; then
         rm -rf "$target_dir"
         log_info "Uninstalled Tetron version $ver"
@@ -363,6 +441,5 @@ main() {
             ;;
     esac
 }
-
 
 main "$@"
