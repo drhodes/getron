@@ -1,0 +1,160 @@
+#!/bin/sh
+set -eu
+
+# getron - Tetron Installation and Version Manager CLI
+# Implemented purely in POSIX /bin/sh
+
+VERSION="1.0.0"
+GITHUB_REPO="drhodes/getron"
+
+log_err() {
+    printf '%s\n' "Error: $1" >&2
+}
+
+log_info() {
+    printf '%s\n' "$1"
+}
+
+show_help() {
+    cat <<'EOF'
+Getron: Tetron Installation and Version Management
+
+Usage: getron <command> [arguments]
+
+Commands:
+  install [version]   Install Tetron (latest or specified version)
+  update [--check]    Check for and install Tetron updates
+  versions            List installed Tetron versions
+  use <version>       Switch active Tetron version
+  rollback            Roll back to previous known-good version
+  doctor              Inspect and diagnose installation health
+  repair              Perform targeted repairs on damaged installation
+  gc                  Remove unused versions and cleanup cache
+  uninstall <version> Remove a specific installed version
+  version             Display Getron CLI version
+  help, --help        Show this help message
+
+GitHub Repository:
+  https://github.com/drhodes/getron
+EOF
+}
+
+discover_platform() {
+    OS="$(uname -s)"
+    ARCH="$(uname -m)"
+    INIT_SYS="unknown"
+
+    if [ "$OS" = "Linux" ]; then
+        if [ -d "/run/systemd/system" ]; then
+            INIT_SYS="systemd"
+        elif command -v openrc >/dev/null 2>&1; then
+            INIT_SYS="openrc"
+        fi
+    elif [ "$OS" = "Darwin" ]; then
+        INIT_SYS="launchd"
+    fi
+}
+
+cmd_install() {
+    ver="${1:-latest}"
+    log_info "Executing install: requested version '$ver'"
+}
+
+cmd_update() {
+    check_only=0
+    if [ "${1:-}" = "--check" ]; then
+        check_only=1
+    fi
+    log_info "Executing update (check_only=$check_only)"
+}
+
+cmd_versions() {
+    log_info "Executing versions"
+}
+
+cmd_use() {
+    if [ -z "${1:-}" ]; then
+        log_err "'use' command requires a version argument (e.g. getron use 1.3.0)"
+        exit 1
+    fi
+    log_info "Executing use: switching to version '$1'"
+}
+
+cmd_rollback() {
+    log_info "Executing rollback"
+}
+
+cmd_doctor() {
+    discover_platform
+    log_info "Executing doctor"
+    log_info "Platform OS: $OS, Arch: $ARCH, Init: $INIT_SYS"
+}
+
+cmd_repair() {
+    log_info "Executing repair"
+}
+
+cmd_gc() {
+    log_info "Executing gc"
+}
+
+cmd_uninstall() {
+    if [ -z "${1:-}" ]; then
+        log_err "'uninstall' command requires a version argument"
+        exit 1
+    fi
+    log_info "Executing uninstall: version '$1'"
+}
+
+main() {
+    if [ $# -eq 0 ]; then
+        show_help
+        exit 0
+    fi
+
+    subcmd="$1"
+    shift || true
+
+    case "$subcmd" in
+        install)
+            cmd_install "$@"
+            ;;
+        update)
+            cmd_update "$@"
+            ;;
+        versions)
+            cmd_versions
+            ;;
+        use)
+            cmd_use "$@"
+            ;;
+        rollback)
+            cmd_rollback
+            ;;
+        doctor)
+            cmd_doctor
+            ;;
+        repair)
+            cmd_repair
+            ;;
+        gc)
+            cmd_gc
+            ;;
+        uninstall)
+            cmd_uninstall "$@"
+            ;;
+        version|--version|-v)
+            log_info "getron version $VERSION"
+            ;;
+        help|--help|-h)
+            show_help
+            ;;
+        *)
+            log_err "unknown command '$subcmd'"
+            log_err "Run 'getron --help' for usage."
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
