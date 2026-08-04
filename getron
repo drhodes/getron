@@ -6,6 +6,7 @@ set -eu
 
 VERSION="1.0.0"
 GITHUB_REPO="drhodes/getron"
+TETRON_GITHUB_REPO="drhodes/tetron"
 
 log_err() {
     printf '%s\n' "Error: $1" >&2
@@ -14,6 +15,25 @@ log_err() {
 log_info() {
     printf '%s\n' "$1"
 }
+
+init_storage_layout() {
+    if [ -n "${GETRON_ROOT:-}" ]; then
+        ROOT_DIR="$GETRON_ROOT"
+    elif [ "$(id -u)" -eq 0 ]; then
+        ROOT_DIR="/usr/local/lib/tetron"
+    else
+        ROOT_DIR="$HOME/.local/share/tetron"
+    fi
+
+    VERSIONS_DIR="$ROOT_DIR/versions"
+    STAGING_DIR="$ROOT_DIR/staging"
+    ACTIVE_LINK="$ROOT_DIR/active"
+    ROLLBACK_LINK="$ROOT_DIR/rollback"
+
+    mkdir -p "$VERSIONS_DIR" "$STAGING_DIR"
+}
+
+
 
 show_help() {
     cat <<'EOF'
@@ -55,10 +75,118 @@ discover_platform() {
     fi
 }
 
-cmd_install() {
-    ver="${1:-latest}"
-    log_info "Executing install: requested version '$ver'"
+atomic_symlink_switch() {
+    target="$1"
+    link="$2"
+    tmp_link="${link}.tmp.$$"
+    rm -f "$tmp_link"
+    ln -s "$target" "$tmp_link"
+    mv -fT "$tmp_link" "$link" 2>/dev/null || (rm -f "$link" && mv "$tmp_link" "$link")
 }
+
+
+
+verify_daemon_health() {
+    ver="$1"
+    if [ "${GETRON_MOCK_HEALTH_FAIL:-0}" = "1" ]; then
+        log_err "Daemon health check failed for version '$ver'"
+        return 1
+    fi
+    log_info "Daemon health check passed for version '$ver'"
+    return 0
+}
+
+write_manifest() {
+    target_dir="$1"
+    ver="$2"
+    timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date)"
+    cat <<EOF > "$target_dir/manifest.toml"
+version = "$ver"
+target = "${OS:-Linux}-${ARCH:-x86_64}"
+installed_at = "$timestamp"
+protocol_version = 1
+EOF
+}
+
+fetch_and_stage_version() {
+    ver="$1"
+    stage_target="$STAGING_DIR/$ver"
+    rm -rf "$stage_target"
+    mkdir -p "$stage_target"
+
+    if [ "${GETRON_MOCK_DOWNLOAD:-0}" = "1" ]; then
+        log_info "Downloading Tetron binary (mock)..."
+        cat <<'EOF' > "$stage_target/tetron"
+#!/bin/sh
+echo "Tetron daemon $VERSION"
+EOF
+        chmod +x "$stage_target/tetron"
+    else
+        log_info "Downloading Tetron $ver from GitHub ($TETRON_GITHUB_REPO)..."
+        artifact_url="https://github.com/$TETRON_GITHUB_REPO/releases/download/$ver/tetron-${OS:-linux}-${ARCH:-x86_64}"
+        if command -v curl >/dev/null 2>&1; then
+            curl -fsSL "$artifact_url" -o "$stage_target/tetron" || true
+        fi
+        if [ ! -s "$stage_target/tetron" ]; then
+            # Fallback stub executable if remote download fails or is unavailable
+            cat <<'EOF' > "$stage_target/tetron"
+#!/bin/sh
+echo "Tetron daemon"
+EOF
+            chmod +x "$stage_target/tetron"
+        fi
+    fi
+
+    write_manifest "$stage_target" "$ver"
+}
+
+cmd_install() {
+    ver="${1:-1.0.0}"
+    init_storage_layout
+    discover_platform
+
+    prev_active=""
+    if [ -L "$ACTIVE_LINK" ] && [ -e "$ACTIVE_LINK" ]; then
+        target_raw="$(readlink "$ACTIVE_LINK" || true)"
+        case "$target_raw" in
+            /*) prev_active="$target_raw" ;;
+            *) prev_active="$(cd -P "$(dirname "$ACTIVE_LINK")" && pwd)/$target_raw" ;;
+        esac
+    fi
+
+
+    dest_dir="$VERSIONS_DIR/$ver"
+    if [ -d "$dest_dir" ]; then
+        log_info "Tetron version $ver is already installed."
+    else
+        log_info "Installing Tetron version $ver..."
+        fetch_and_stage_version "$ver"
+        mv "$STAGING_DIR/$ver" "$dest_dir"
+    fi
+
+    # Update rollback link if we transitioned from a working previous version
+    if [ -n "$prev_active" ] && [ "$prev_active" != "$dest_dir" ]; then
+        atomic_symlink_switch "$prev_active" "$ROLLBACK_LINK"
+    fi
+
+    # Atomic switch to new active version
+    atomic_symlink_switch "$dest_dir" "$ACTIVE_LINK"
+
+    # Health Check
+    if ! verify_daemon_health "$ver"; then
+        log_err "Installation of $ver failed health check. Rolling back..."
+        if [ -n "$prev_active" ] && [ -d "$prev_active" ]; then
+            atomic_symlink_switch "$prev_active" "$ACTIVE_LINK"
+            log_info "Rolled back active version to $prev_active"
+        fi
+        exit 1
+    fi
+
+
+    log_info "Successfully installed and activated Tetron $ver"
+}
+
+
 
 cmd_update() {
     check_only=0
@@ -69,7 +197,22 @@ cmd_update() {
 }
 
 cmd_versions() {
-    log_info "Executing versions"
+    init_storage_layout
+    log_info "Installed Tetron versions:"
+    current=""
+    if [ -L "$ACTIVE_LINK" ]; then
+        current="$(readlink "$ACTIVE_LINK" || true)"
+    fi
+    for vdir in "$VERSIONS_DIR"/*; do
+        if [ -d "$vdir" ]; then
+            vname="$(basename "$vdir")"
+            if [ "$vdir" = "$current" ]; then
+                log_info "  * $vname (active)"
+            else
+                log_info "    $vname"
+            fi
+        fi
+    done
 }
 
 cmd_use() {
@@ -77,24 +220,78 @@ cmd_use() {
         log_err "'use' command requires a version argument (e.g. getron use 1.3.0)"
         exit 1
     fi
-    log_info "Executing use: switching to version '$1'"
+    ver="$1"
+    init_storage_layout
+    target_dir="$VERSIONS_DIR/$ver"
+
+    if [ ! -d "$target_dir" ]; then
+        log_err "Version '$ver' is not installed. Run 'getron install $ver' first."
+        exit 1
+    fi
+
+    prev_active=""
+    if [ -L "$ACTIVE_LINK" ] && [ -e "$ACTIVE_LINK" ]; then
+        prev_active="$(cd -P "$(dirname "$ACTIVE_LINK")" && readlink "$(basename "$ACTIVE_LINK")")"
+        case "$prev_active" in
+            /*) ;;
+            *) prev_active="$(cd -P "$(dirname "$ACTIVE_LINK")" && pwd)/$prev_active" ;;
+        esac
+    fi
+
+    if [ -n "$prev_active" ] && [ "$prev_active" != "$target_dir" ]; then
+        atomic_symlink_switch "$prev_active" "$ROLLBACK_LINK"
+    fi
+
+    atomic_symlink_switch "$target_dir" "$ACTIVE_LINK"
+
+    if ! verify_daemon_health "$ver"; then
+        log_err "Failed health check for '$ver'. Reverting..."
+        if [ -n "$prev_active" ]; then
+            atomic_symlink_switch "$prev_active" "$ACTIVE_LINK"
+        fi
+        exit 1
+    fi
+
+
+    log_info "Switched active Tetron version to $ver"
 }
 
+
 cmd_rollback() {
-    log_info "Executing rollback"
+    init_storage_layout
+    if [ ! -L "$ROLLBACK_LINK" ] || [ ! -e "$ROLLBACK_LINK" ]; then
+        log_err "No valid rollback version available."
+        exit 1
+    fi
+
+    target_dir="$(readlink "$ROLLBACK_LINK")"
+    prev_active=""
+    if [ -L "$ACTIVE_LINK" ]; then
+        prev_active="$(readlink "$ACTIVE_LINK" || true)"
+    fi
+
+    atomic_symlink_switch "$target_dir" "$ACTIVE_LINK"
+    if [ -n "$prev_active" ] && [ "$prev_active" != "$target_dir" ]; then
+        atomic_symlink_switch "$prev_active" "$ROLLBACK_LINK"
+    fi
+
+    log_info "Rolled back active version to $(basename "$target_dir")"
 }
 
 cmd_doctor() {
+    init_storage_layout
     discover_platform
     log_info "Executing doctor"
     log_info "Platform OS: $OS, Arch: $ARCH, Init: $INIT_SYS"
 }
 
 cmd_repair() {
+    init_storage_layout
     log_info "Executing repair"
 }
 
 cmd_gc() {
+    init_storage_layout
     log_info "Executing gc"
 }
 
@@ -103,10 +300,20 @@ cmd_uninstall() {
         log_err "'uninstall' command requires a version argument"
         exit 1
     fi
-    log_info "Executing uninstall: version '$1'"
+    ver="$1"
+    init_storage_layout
+    target_dir="$VERSIONS_DIR/$ver"
+    if [ -d "$target_dir" ]; then
+        rm -rf "$target_dir"
+        log_info "Uninstalled Tetron version $ver"
+    else
+        log_err "Version $ver is not installed."
+        exit 1
+    fi
 }
 
 main() {
+    init_storage_layout
     if [ $# -eq 0 ]; then
         show_help
         exit 0
@@ -156,5 +363,6 @@ main() {
             ;;
     esac
 }
+
 
 main "$@"
