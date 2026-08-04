@@ -6,7 +6,8 @@ set -eu
 
 VERSION="1.0.0"
 GITHUB_REPO="drhodes/getron"
-TETRON_GITHUB_REPO="drhodes/tetron"
+TETRON_GITHUB_REPO="ErikAllanKincaid/tetron"
+
 
 log_err() {
     printf '%s\n' "Error: $1" >&2
@@ -144,9 +145,10 @@ EOF
 
 
 cmd_install() {
-    ver="${1:-1.0.0}"
+    ver="${1:-nightly}"
     init_storage_layout
     discover_platform
+
 
     prev_active=""
     if [ -L "$ACTIVE_LINK" ] && [ -e "$ACTIVE_LINK" ]; then
