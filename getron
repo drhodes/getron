@@ -218,7 +218,13 @@ cmd_install() {
     log_info "Activating version: $ver ($ACTIVE_LINK -> $dest_dir)"
     atomic_symlink_switch "$dest_dir" "$ACTIVE_LINK"
 
+    log_info "Delegating service/node installation to Tetron ('tetron install')..."
+    if [ "${GETRON_MOCK_DOWNLOAD:-0}" = "0" ] && [ -x "$ACTIVE_LINK/tetron" ]; then
+        "$ACTIVE_LINK/tetron" install || true
+    fi
+
     log_info "Running daemon health check for $ver..."
+
 
 
 
