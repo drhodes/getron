@@ -18,9 +18,10 @@ class BootstrapScriptReq(Req):
 class GitHubOriginFetcherReq(Req):
     '''
     Release assets and binary artifacts are fetched directly from GitHub repository releases
-    (`https://github.com/drhodes/getron` or `https://github.com/drhodes/tetron`)
+    (`https://github.com/drhodes/getron` for `getron` and `https://github.com/ErikAllanKincaid/tetron` for `tetron`)
     rather than external custom domains.
     '''
+
 
 
 class PlatformDiscoveryReq(Req):

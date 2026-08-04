@@ -20,10 +20,11 @@ class StorageDirectoryLayoutReq(Req):
 
 class ReleaseFetcherReq(Req):
     '''
-    Getron fetches release artifacts and checksums from GitHub Releases
-    (`https://github.com/drhodes/tetron/releases/download/<version>/...`).
-    Supports download verification via SHA-256 / SHA-512 checksum files.
+    Getron fetches release artifacts directly from GitHub Releases (`ErikAllanKincaid/tetron`).
+    When version is unspecified or set to `latest`, Getron resolves the latest release tag
+    via GitHub API (`v0.9.3`). Maps platform names (e.g. Darwin to `macos`) dynamically.
     '''
+
 
 
 class ManifestGeneratorReq(Req):
