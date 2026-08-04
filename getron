@@ -118,13 +118,18 @@ echo "Tetron daemon $VERSION"
 EOF
         chmod +x "$stage_target/tetron"
     else
+        os_lower="$(printf '%s' "${OS:-linux}" | tr '[:upper:]' '[:lower:]')"
+        arch_lower="$(printf '%s' "${ARCH:-x86_64}" | tr '[:upper:]' '[:lower:]')"
+        artifact_url="https://github.com/$TETRON_GITHUB_REPO/releases/download/$ver/tetron-${os_lower}-${arch_lower}"
         log_info "Downloading Tetron $ver from GitHub ($TETRON_GITHUB_REPO)..."
-        artifact_url="https://github.com/$TETRON_GITHUB_REPO/releases/download/$ver/tetron-${OS:-linux}-${ARCH:-x86_64}"
         if command -v curl >/dev/null 2>&1; then
             curl -fsSL "$artifact_url" -o "$stage_target/tetron" || true
+        elif command -v wget >/dev/null 2>&1; then
+            wget -qO "$stage_target/tetron" "$artifact_url" || true
         fi
         if [ ! -s "$stage_target/tetron" ]; then
-            # Fallback stub executable if remote download fails or is unavailable
+            log_err "Failed to download release from $artifact_url"
+            log_info "Creating stub executable for local testing..."
             cat <<'EOF' > "$stage_target/tetron"
 #!/bin/sh
 echo "Tetron daemon"
@@ -135,6 +140,8 @@ EOF
 
     write_manifest "$stage_target" "$ver"
 }
+
+
 
 cmd_install() {
     ver="${1:-1.0.0}"
