@@ -26,13 +26,22 @@ init_storage_layout() {
         ROOT_DIR="$HOME/.local/share/tetron"
     fi
 
+    if [ -n "${GETRON_BIN_DIR:-}" ]; then
+        BIN_DIR="$GETRON_BIN_DIR"
+    elif [ "$(id -u)" -eq 0 ]; then
+        BIN_DIR="/usr/local/bin"
+    else
+        BIN_DIR="$HOME/.local/bin"
+    fi
+
     VERSIONS_DIR="$ROOT_DIR/versions"
     STAGING_DIR="$ROOT_DIR/staging"
     ACTIVE_LINK="$ROOT_DIR/active"
     ROLLBACK_LINK="$ROOT_DIR/rollback"
 
-    mkdir -p "$VERSIONS_DIR" "$STAGING_DIR"
+    mkdir -p "$VERSIONS_DIR" "$STAGING_DIR" "$BIN_DIR"
 }
+
 
 show_help() {
     cat <<'EOF'
@@ -209,7 +218,12 @@ cmd_install() {
     log_info "Activating version: $ver ($ACTIVE_LINK -> $dest_dir)"
     atomic_symlink_switch "$dest_dir" "$ACTIVE_LINK"
 
+    log_info "Linking executable to PATH ($BIN_DIR/tetron -> $ACTIVE_LINK/tetron)..."
+    atomic_symlink_switch "$ACTIVE_LINK/tetron" "$BIN_DIR/tetron"
+
     log_info "Running daemon health check for $ver..."
+
+
     if ! verify_daemon_health "$ver"; then
         log_err "Health check failed for $ver. Rolling back..."
         if [ -n "$prev_active" ] && [ -d "$prev_active" ]; then
@@ -278,11 +292,13 @@ cmd_use() {
     fi
 
     atomic_symlink_switch "$target_dir" "$ACTIVE_LINK"
+    atomic_symlink_switch "$ACTIVE_LINK/tetron" "$BIN_DIR/tetron"
 
     if ! verify_daemon_health "$ver"; then
         log_err "Failed health check for '$ver'. Reverting..."
         if [ -n "$prev_active" ]; then
             atomic_symlink_switch "$prev_active" "$ACTIVE_LINK"
+            atomic_symlink_switch "$ACTIVE_LINK/tetron" "$BIN_DIR/tetron"
         fi
         exit 1
     fi
@@ -304,12 +320,14 @@ cmd_rollback() {
     fi
 
     atomic_symlink_switch "$target_dir" "$ACTIVE_LINK"
+    atomic_symlink_switch "$ACTIVE_LINK/tetron" "$BIN_DIR/tetron"
     if [ -n "$prev_active" ] && [ "$prev_active" != "$target_dir" ]; then
         atomic_symlink_switch "$prev_active" "$ROLLBACK_LINK"
     fi
 
     log_info "Rolled back active version to $(basename "$target_dir")"
 }
+
 
 cmd_doctor() {
     init_storage_layout
