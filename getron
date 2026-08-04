@@ -225,15 +225,28 @@ cmd_install() {
         if [ "$(id -u)" -eq 0 ]; then
             "$ACTIVE_LINK/tetron" install || true
         else
-            log_info "Tetron service installation requires root privileges."
             if command -v sudo >/dev/null 2>&1; then
-                log_info "Executing 'sudo $ACTIVE_LINK/tetron install'..."
-                sudo "$ACTIVE_LINK/tetron" install || true
+                printf '%s' "Tetron service installation requires root privileges. Run 'sudo tetron install'? [Y/n] "
+                if [ -t 0 ]; then
+                    read reply || reply="y"
+                else
+                    reply="y"
+                fi
+                case "$reply" in
+                    [yY][eE][sS]|[yY]|"")
+                        log_info "Executing 'sudo $ACTIVE_LINK/tetron install'..."
+                        sudo "$ACTIVE_LINK/tetron" install || true
+                        ;;
+                    *)
+                        log_info "Skipping privileged Tetron system service installation."
+                        ;;
+                esac
             else
                 "$ACTIVE_LINK/tetron" install || true
             fi
         fi
     fi
+
 
     log_info "Ensuring active binary link in PATH ($BIN_DIR/tetron -> $ACTIVE_LINK/tetron)..."
     atomic_symlink_switch "$ACTIVE_LINK/tetron" "$BIN_DIR/tetron"
