@@ -106,7 +106,7 @@ EOF
 }
 
 resolve_latest_release_tag() {
-    log_info "Querying latest release from GitHub API (https://api.github.com/repos/$TETRON_GITHUB_REPO/releases/latest)..."
+    log_info "Querying latest release from GitHub API (https://api.github.com/repos/$TETRON_GITHUB_REPO/releases/latest)..." >&2
     latest_tag=""
     if command -v curl >/dev/null 2>&1; then
         latest_tag="$(curl -s https://api.github.com/repos/$TETRON_GITHUB_REPO/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || true)"
@@ -114,9 +114,10 @@ resolve_latest_release_tag() {
     if [ -z "$latest_tag" ]; then
         latest_tag="v0.9.3"
     fi
-    log_info "Resolved latest release tag: $latest_tag"
+    log_info "Resolved latest release tag: $latest_tag" >&2
     printf '%s' "$latest_tag"
 }
+
 
 fetch_and_stage_version() {
     ver="$1"
