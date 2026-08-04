@@ -7,9 +7,13 @@ import subprocess
 GETRON_BIN = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "getron"))
 INSTALL_SH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "install.sh"))
 
-def run_cmd(cmd, cwd=None):
-    res = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=cwd)
+def run_cmd(cmd, cwd=None, env=None):
+    merged_env = os.environ.copy()
+    if env:
+        merged_env.update(env)
+    res = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=cwd, env=merged_env)
     return res.returncode, res.stdout, res.stderr
+
 
 class TestStage1Bootstrap(unittest.TestCase):
     def test_posix_sh_syntax(self):
@@ -38,8 +42,9 @@ class TestStage1Bootstrap(unittest.TestCase):
 
     def test_subcommand_stubs(self):
         for cmd in ["install 1.0.0", "update", "versions", "use 1.0.0", "rollback", "doctor", "repair", "gc", "uninstall 1.0.0"]:
-            rc, out, err = run_cmd(f"sh {GETRON_BIN} {cmd}")
+            rc, out, err = run_cmd(f"sh {GETRON_BIN} {cmd}", env={"GETRON_MOCK_DOWNLOAD": "1"})
             self.assertEqual(rc, 0, f"Command '{cmd}' failed with code {rc}: {err}")
+
 
 
 

@@ -105,8 +105,23 @@ protocol_version = 1
 EOF
 }
 
+resolve_latest_release_tag() {
+    latest_tag=""
+    if command -v curl >/dev/null 2>&1; then
+        latest_tag="$(curl -s https://api.github.com/repos/$TETRON_GITHUB_REPO/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+    fi
+    if [ -z "$latest_tag" ]; then
+        latest_tag="v0.9.3"
+    fi
+    printf '%s' "$latest_tag"
+}
+
 fetch_and_stage_version() {
     ver="$1"
+    if [ "$ver" = "latest" ] || [ "$ver" = "default" ]; then
+        ver="$(resolve_latest_release_tag)"
+    fi
+
     stage_target="$STAGING_DIR/$ver"
     rm -rf "$stage_target"
     mkdir -p "$stage_target"
@@ -121,6 +136,11 @@ EOF
     else
         os_lower="$(printf '%s' "${OS:-linux}" | tr '[:upper:]' '[:lower:]')"
         arch_lower="$(printf '%s' "${ARCH:-x86_64}" | tr '[:upper:]' '[:lower:]')"
+        # Map Darwin to macos in release artifact filenames
+        if [ "$os_lower" = "darwin" ]; then
+            os_lower="macos"
+        fi
+
         artifact_url="https://github.com/$TETRON_GITHUB_REPO/releases/download/$ver/tetron-${os_lower}-${arch_lower}"
         log_info "Downloading Tetron $ver from GitHub ($TETRON_GITHUB_REPO)..."
         if command -v curl >/dev/null 2>&1; then
@@ -128,15 +148,12 @@ EOF
         elif command -v wget >/dev/null 2>&1; then
             wget -qO "$stage_target/tetron" "$artifact_url" || true
         fi
+
         if [ ! -s "$stage_target/tetron" ]; then
-            log_err "Failed to download release from $artifact_url"
-            log_info "Creating stub executable for local testing..."
-            cat <<'EOF' > "$stage_target/tetron"
-#!/bin/sh
-echo "Tetron daemon"
-EOF
-            chmod +x "$stage_target/tetron"
+            log_err "Failed to download release artifact from $artifact_url"
+            exit 1
         fi
+        chmod +x "$stage_target/tetron"
     fi
 
     write_manifest "$stage_target" "$ver"
@@ -144,10 +161,12 @@ EOF
 
 
 
+
 cmd_install() {
-    ver="${1:-nightly}"
+    ver="${1:-latest}"
     init_storage_layout
     discover_platform
+
 
 
     prev_active=""
