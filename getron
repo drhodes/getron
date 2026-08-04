@@ -89,8 +89,10 @@ atomic_symlink_switch() {
     tmp_link="${link}.tmp.$$"
     rm -f "$tmp_link"
     ln -s "$target" "$tmp_link"
-    mv -fT "$tmp_link" "$link" 2>/dev/null || (rm -f "$link" && mv "$tmp_link" "$link")
+    rm -f "$link"
+    mv -f "$tmp_link" "$link"
 }
+
 
 verify_daemon_health() {
     ver="$1"
