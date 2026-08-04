@@ -11,7 +11,8 @@ curl -fsSL https://raw.githubusercontent.com/drhodes/getron/main/install.sh | sh
 ## DESCRIPTION
 getron is a POSIX /bin/sh version manager for Tetron. It handles installation, upgrades, version switching, rollback, diagnostics, and garbage collection.
 
-Tetron releases are fetched directly from GitHub Releases (`drhodes/tetron`).
+Tetron releases are fetched directly from GitHub Releases (`ErikAllanKincaid/tetron`).
+
 
 ## COMMANDS
 ```
