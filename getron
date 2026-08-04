@@ -220,8 +220,19 @@ cmd_install() {
 
     log_info "Delegating service/node installation to Tetron ('tetron install')..."
     if [ "${GETRON_MOCK_DOWNLOAD:-0}" = "0" ] && [ -x "$ACTIVE_LINK/tetron" ]; then
-        "$ACTIVE_LINK/tetron" install || true
+        if [ "$(id -u)" -eq 0 ]; then
+            "$ACTIVE_LINK/tetron" install || true
+        else
+            log_info "Tetron service installation requires root privileges."
+            if command -v sudo >/dev/null 2>&1; then
+                log_info "Executing 'sudo $ACTIVE_LINK/tetron install'..."
+                sudo "$ACTIVE_LINK/tetron" install || true
+            else
+                "$ACTIVE_LINK/tetron" install || true
+            fi
+        fi
     fi
+
 
     log_info "Running daemon health check for $ver..."
 
